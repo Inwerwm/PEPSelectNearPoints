@@ -59,7 +59,7 @@ namespace SelectNearPoints
                 float radius = 0;
                 while (!inputRadiusIsValid)
                 {
-                    var inputRadius = Microsoft.VisualBasic.Interaction.InputBox($"フォームから材質が選択されている場合はその材質内の頂点のみ選択されます。{Environment.NewLine}頂点ごとの検索半径を指定してください。", "選択頂点の近隣頂点を選択", "0.01", -1, -1);
+                    var inputRadius = Microsoft.VisualBasic.Interaction.InputBox($"頂点ごとの検索半径を指定してください。", "選択頂点の近隣頂点を選択", "0.01", -1, -1);
                     if (inputRadius == "")
                         return;
                     inputRadiusIsValid = float.TryParse(inputRadius, out radius);
@@ -107,25 +107,15 @@ namespace SelectNearPoints
                 YRange.max += radius;
                 ZRange.max += radius;
 
-                // 選択材質内の頂点からKd木を作成(選択材質がなければ全頂点を対象)
-                IEnumerable<IPXVertex> targetVertices;
-                if (selectedMaterialIndex >= 0)
-                {
-                    var selectedMaterial = pmx.Material[selectedMaterialIndex];
-                    targetVertices = Utility.GetMaterialVertices(selectedMaterial)
-                        .Where(v => v.Position.X.IsWithin(XRange.min, XRange.max))
-                        .Where(v => v.Position.Y.IsWithin(YRange.min, YRange.max))
-                        .Where(v => v.Position.Z.IsWithin(ZRange.min, ZRange.max));
-                }
-                else
-                {
-                    targetVertices = pmx.Vertex
-                        .Where(v => v.Position.X.IsWithin(XRange.min, XRange.max))
-                        .Where(v => v.Position.Y.IsWithin(YRange.min, YRange.max))
-                        .Where(v => v.Position.Z.IsWithin(ZRange.min, ZRange.max));
-                }
+                // 選択材質内の頂点からKd木を作成
+                var targetVertices = pmx.Vertex
+                     .Where(v => v.Position.X.IsWithin(XRange.min, XRange.max))
+                     .Where(v => v.Position.Y.IsWithin(YRange.min, YRange.max))
+                     .Where(v => v.Position.Z.IsWithin(ZRange.min, ZRange.max))
+                     .Where(v => !selectedVertices.Contains(v));
 
-                var tree = new KdTree<float, int>(3, new FloatMath());
+
+                var tree = new KdTree<float, int>(3, new FloatMath(), AddDuplicateBehavior.List);
                 foreach (var v in targetVertices)
                 {
                     tree.Add(v.Position.ToArray(), pmx.Vertex.IndexOf(v));
@@ -135,10 +125,11 @@ namespace SelectNearPoints
                 foreach (var v in selectedVertices)
                 {
                     KdTreeNode<float, int>[] node = tree.RadialSearch(v.Position.ToArray(), radius);
-                    selectIDs.AddRange(node.Select(n => n.Value));
+                    selectIDs.AddRange(node.SelectMany(n => n.Duplicate));
                 }
 
-                args.Host.Connector.View.PmxView.SetSelectedVertexIndices(selectIDs.Distinct().ToArray());
+                args.Host.Connector.View.PmxView.SetSelectedVertexIndices(selectIDs.ToArray());
+                MessageBox.Show(selectIDs.Count.ToString());
             }
             catch (Exception ex)
             {
